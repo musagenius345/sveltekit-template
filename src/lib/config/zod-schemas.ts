@@ -14,11 +14,11 @@ export const userSchema = z.object({
 		.email({ message: 'Please enter a valid email address' }),
 	password: z
 		.string({ required_error: 'Password is required' })
-		.min(6, { message: 'Password must be at least 6 characters' })
+		.min(4, { message: 'Password must be at least 4 characters' })
 		.trim(),
 	confirmPassword: z
 		.string({ required_error: 'Password is required' })
-		.min(6, { message: 'Password must be at least 6 characters' })
+		.min(4, { message: 'Password must be at least 4 characters' })
 		.trim(),
 	//terms: z.boolean({ required_error: 'You must accept the terms and privacy policy' }),
 	role: z

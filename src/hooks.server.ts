@@ -27,8 +27,29 @@ export const handle: Handle = async ({ event, resolve }) => {
 
 	const sessionId = event.cookies.get(lucia.sessionCookieName);
 	const { session, user } = sessionId
-		? await lucia.validateSession(sessionId)
-		: { session: null, user: null };
+  ? await lucia.validateSession(sessionId)
+  : { session: null, user: null };
+console.log('Session validated:', !!session, 'User:', !!user);
+
+	// Handle authentication for protected routes
+    if (event.url.pathname.startsWith('/(protected)')) {
+        if (!user) {
+            console.log('Redirecting unauthenticated user from protected route');
+            throw redirect(303, '/auth/sign-in');
+        }
+        if (!user.verified && event.url.pathname !== '/auth/verify/email') {
+            console.log('Redirecting unverified user to email verification');
+            throw redirect(303, '/auth/verify/email');
+        }
+    }
+
+    // Handle admin routes
+    if (event.url.pathname.startsWith('/(admin)')) {
+        if (!user || user.role !== 'ADMIN') {
+            console.log('Redirecting non-admin user from admin route');
+            throw redirect(303, '/auth/sign-in');
+        }
+    }
 
 	if (session && session.fresh) {
 		const sessionCookie = lucia.createSessionCookie(session.id);

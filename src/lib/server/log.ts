@@ -1,88 +1,125 @@
-import { Axiom } from '@axiomhq/js';
-//import Analytics from '@june-so/analytics-node';
-import { AXIOM_TOKEN, AXIOM_ORG_ID, AXIOM_DATASET } from '$env/static/private';
+import fs from 'fs/promises';
+import path from 'path';
+import { performance } from 'perf_hooks';
 import getAllUrlParams from '$lib/_helpers/getAllUrlParams';
 import parseTrack from '$lib/_helpers/parseTrack';
 import parseMessage from '$lib/_helpers/parseMessage';
 import { DOMAIN } from '$lib/config/constants';
 
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-//@ts-ignore
-export default async function log(statusCode: number, event) {
-	try {
+const LOG_DIR: string = path.join(process.cwd(), 'logs');
+const LOG_FILE: string = path.join(LOG_DIR, `app-${new Date().toISOString().split('T')[0]}.log`);
+const WRITE_BUFFER: string[] = [];
+const BUFFER_SIZE: number = 10; // Number of logs to buffer before writing
+const FLUSH_INTERVAL: number = 5000; // Flush interval in milliseconds
 
-		let level = 'info';
-		if (statusCode >= 400) {
-			level = 'error';
-		}
-		const error = event?.locals?.error || undefined;
-		const errorId = event?.locals?.errorId || undefined;
-		const errorStackTrace = event?.locals?.errorStackTrace || undefined;
-		let urlParams = {};
-		if (event?.url?.search) {
-			urlParams = await getAllUrlParams(event?.url?.search);
-		}
-		let messageEvents = {};
-		if (event?.locals?.message) {
-			messageEvents = await parseMessage(event?.locals?.message);
-		}
-		let trackEvents = {};
-		if (event?.locals?.track) {
-			trackEvents = await parseTrack(event?.locals?.track);
-		}
+interface LogData {
+  timestamp: string;
+  level: 'info' | 'error';
+  method: string;
+  path: string;
+  status: number;
+  timeInMs: number;
+  user?: string;
+  userId?: string;
+  referer?: string;
+  error?: unknown;
+  errorId?: string;
+  errorStackTrace?: string;
+  [key: string]: unknown;
+}
 
-		let referer = event.request.headers.get('referer');
-		if (referer) {
-			const refererUrl = await new URL(referer);
-			const refererHostname = refererUrl.hostname;
-			if (refererHostname === 'localhost' || refererHostname === DOMAIN) {
-				referer = refererUrl.pathname;
-			}
-		} else {
-			referer = undefined;
-		}
-		const logData: object = {
-			level: level,
-			method: event.request.method,
-			path: event.url.pathname,
-			status: statusCode,
-			timeInMs: Date.now() - event?.locals?.startTimer,
-			user: event?.locals?.user?.email,
-			userId: event?.locals?.user?.userId,
-			referer: referer,
-			error: error,
-			errorId: errorId,
-			errorStackTrace: errorStackTrace,
-			...urlParams,
-			...messageEvents,
-			...trackEvents
-		};
-		console.log('log: ', JSON.stringify(logData));
-		const client = new Axiom({
-			token: AXIOM_TOKEN,
-			orgId: AXIOM_ORG_ID
-		});
-		client.ingest(AXIOM_DATASET, [logData]);
-		/*	const analytics = new Analytics('695GiY4XhI9EcYjP');
-		analytics.identify({
-			userId: event?.locals?.user?.userId,
-			traits: {
-				level: level,
-				method: event.request.method,
-				path: event.url.pathname,
-				status: statusCode,
-				timeInMs: Date.now() - event?.locals?.startTimer,
-				email: event?.locals?.user?.email,
-				referer: referer,
-				error: error,
-				errorId: errorId,
-				errorStackTrace: errorStackTrace,
-				...urlParams,
-				...messageEvents,
-				...trackEvents
-			}
-		});*/
-	} catch (err) {
-		throw new Error(`Error Logger: ${JSON.stringify(err)}`);
-	}
+interface Event {
+	request: {
+	  method: string;
+	  headers: {
+		get(name: string): string | null;
+	  };
+	};
+	url: {
+	  pathname: string;
+	  search?: string;
+	};
+	locals?: {
+	  startTimer?: number;
+	  user?: {
+		email?: string;
+		userId?: string;
+	  };
+	  error?: unknown;
+	  errorId?: string;
+	  errorStackTrace?: string;
+	  message?: unknown;
+	  track?: unknown;
+	};
+  }
+
+// Ensure log directory exists
+fs.mkdir(LOG_DIR, { recursive: true }).catch(console.error);
+
+async function flushLogs(): Promise<void> {
+  if (WRITE_BUFFER.length === 0) return;
+
+  const logsToWrite = WRITE_BUFFER.splice(0, WRITE_BUFFER.length);
+  try {
+    await fs.appendFile(LOG_FILE, logsToWrite.join('\n') + '\n');
+  } catch (err) {
+    console.error('Failed to write logs:', err);
+  }
+}
+
+setInterval(flushLogs, FLUSH_INTERVAL);
+
+process.on('exit', () => {
+  flushLogs().catch(console.error);
+});
+
+export default async function log(statusCode: number, event: Event): Promise<void> {
+  const startTime = performance.now();
+  try {
+    const level: LogData['level'] = statusCode >= 400 ? 'error' : 'info';
+    const { error, errorId, errorStackTrace } = event?.locals || {};
+    
+    const urlParams = event?.url?.search ? await getAllUrlParams(event.url.search) : {};
+    const messageEvents = event?.locals?.message ? await parseMessage(event.locals.message) : {};
+    const trackEvents = event?.locals?.track ? await parseTrack(event.locals.track) : {};
+
+    let referer: string | undefined = undefined;
+    const refererHeader = event.request.headers.get('referer');
+    if (refererHeader) {
+      const refererUrl = new URL(refererHeader);
+      referer = (refererUrl.hostname === 'localhost' || refererUrl.hostname === DOMAIN) 
+        ? refererUrl.pathname 
+        : refererHeader;
+    }
+
+    const logData: LogData = {
+      timestamp: new Date().toISOString(),
+      level,
+      method: event.request.method,
+      path: event.url.pathname,
+      status: statusCode,
+      timeInMs: performance.now() - (event?.locals?.startTimer || startTime),
+      user: event?.locals?.user?.email,
+      userId: event?.locals?.user?.userId,
+      referer,
+      error,
+      errorId,
+      errorStackTrace,
+      ...urlParams,
+      ...messageEvents,
+      ...trackEvents
+    };
+
+    WRITE_BUFFER.push(JSON.stringify(logData));
+
+    if (WRITE_BUFFER.length >= BUFFER_SIZE) {
+      await flushLogs();
+    }
+
+  } catch (err) {
+    console.error(`Error Logger: ${err instanceof Error ? err.message : String(err)}`);
+  } finally {
+    const endTime = performance.now();
+    console.log(`Logging took ${endTime - startTime} milliseconds`);
+  }
 }

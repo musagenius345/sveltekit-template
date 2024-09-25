@@ -10,33 +10,34 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
 	import convertNameToInitials from '$lib/_helpers/convertNameToInitials';
+	import type { User } from "$lib/server/database/drizzle-schemas.ts"
 
-	export let user: any;
-	$: currentPage = $page.url.pathname;
+	let { user } = $props();
+	let currentPage = $derived($page.url.pathname);
 
 	function signOut() {
-		// Create a form element
-		var form = document.createElement('form');
+		const form = document.createElement('form');
 		form.method = 'POST';
 		form.action = '/auth/sign-out';
 		document.body.appendChild(form);
 		form.submit();
 	}
 
-	let initials: string = '';
-	$: {
+	let initials = $derived(() => {
 		if (user) {
-			initials = convertNameToInitials(user.firstName, user.lastName);
+			return convertNameToInitials(user.firstName, user.lastName);
 		}
-	}
+		return '';
+	});
 </script>
 
 <header class="bg-background sticky top-0 z-40 w-full border-b">
 	<div class="container flex h-16 items-center space-x-4 sm:justify-between sm:space-x-0">
 		<div class="flex gap-6 md:gap-10">
-			<a class="flex items-center space-x-2" href="/"
-				><Logo size="24"></Logo><span class="inline-block font-bold">{APP_NAME}</span></a
-			>
+			<a class="flex items-center space-x-2" href="/">
+				<Logo size="24" />
+				<span class="inline-block font-bold">{APP_NAME}</span>
+			</a>
 			<nav class="flex gap-6">
 				<a
 					class="flex items-center text-sm font-medium text-muted-foreground"
@@ -108,14 +109,14 @@
 									Appearance
 								</DropdownMenu.SubTrigger>
 								<DropdownMenu.SubContent>
-									<DropdownMenu.Item on:click={() => setMode('light')}
-										><Sun class="mr-2 h-4 w-4" />Light
+									<DropdownMenu.Item on:click={() => setMode('light')}>
+										<Sun class="mr-2 h-4 w-4" />Light
 									</DropdownMenu.Item>
-									<DropdownMenu.Item on:click={() => setMode('dark')}
-										><Moon class="mr-2 h-4 w-4" />Dark
+									<DropdownMenu.Item on:click={() => setMode('dark')}>
+										<Moon class="mr-2 h-4 w-4" />Dark
 									</DropdownMenu.Item>
-									<DropdownMenu.Item on:click={() => setMode('system')}
-										><SunMoon class="mr-2 h-4 w-4" />System
+									<DropdownMenu.Item on:click={() => setMode('system')}>
+										<SunMoon class="mr-2 h-4 w-4" />System
 									</DropdownMenu.Item>
 								</DropdownMenu.SubContent>
 							</DropdownMenu.Sub>

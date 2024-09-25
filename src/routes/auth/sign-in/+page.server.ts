@@ -1,5 +1,3 @@
-// auth/signin/+page.server.ts
-
 import { fail, redirect } from '@sveltejs/kit';
 import { superValidate } from 'sveltekit-superforms/server';
 import { z } from 'zod';
@@ -29,29 +27,29 @@ export const actions = {
             return fail(400, { form });
         }
 
+        const email = form.data.email.toLowerCase();
+        const user = await getUserByEmail(email);
+        console.log('User found:', !!user);
+
+        if (!user || !user.password) {
+            console.log('User not found or no password');
+            form.error = 'Invalid credentials';
+            return fail(400, { form });
+        }
+
+        const validPassword = await new Argon2id().verify(user.password, form.data.password);
+        console.log('Password valid:', validPassword);
+
+        if (!validPassword) {
+            form.error = 'Invalid credentials';
+            return fail(400, { form });
+        }
+
+        // Set expiration to 30 days from now
+        const expiresAt = new Date();
+        expiresAt.setDate(expiresAt.getDate() + 30);
+
         try {
-            const email = form.data.email.toLowerCase();
-            const user = await getUserByEmail(email);
-            console.log('User found:', !!user);
-
-            if (!user || !user.password) {
-                console.log('User not found or no password');
-                form.error = 'Invalid credentials';
-                return fail(400, { form });
-            }
-
-            const validPassword = await new Argon2id().verify(user.password, form.data.password);
-            console.log('Password valid:', validPassword);
-
-            if (!validPassword) {
-                form.error = 'Invalid credentials';
-                return fail(400, { form });
-            }
-
-            // Set expiration to 30 days from now
-            const expiresAt = new Date();
-            expiresAt.setDate(expiresAt.getDate() + 30);
-
             const session = await lucia.createSession(user.id, {
                 expiresAt: expiresAt
             });
@@ -64,14 +62,13 @@ export const actions = {
             });
 
             console.log('Session cookie set, redirecting');
-            throw redirect(302, '/dashboard');
         } catch (error) {
-            console.error('Sign-in error:', error);
-            if (error instanceof Response && error.status === 302) {
-                throw error; // Re-throw redirect
-            }
+            console.error('Session creation error:', error);
             form.error = 'An unexpected error occurred';
             return fail(500, { form });
         }
+
+        // Perform the redirect outside of any try-catch block
+        throw redirect(302, '/dashboard');
     }
 };
